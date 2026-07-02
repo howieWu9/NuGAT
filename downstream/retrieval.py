@@ -8,7 +8,7 @@ import torch
 
 from fotnuf.data.features import FeatureStore
 from fotnuf.data.mmkg import MMKGData, Triple
-from fotnuf.models.fotnuf import FoTNuFModel
+from fotnuf.models.fotnuf import NuGATModel
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -74,7 +74,7 @@ def triple_text(triple: Triple, data: MMKGData) -> str:
 
 @torch.no_grad()
 def rerank_triples_for_question(
-    model: FoTNuFModel,
+    model: NuGATModel,
     data: MMKGData,
     feature_store: FeatureStore,
     question: str,

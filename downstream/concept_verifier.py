@@ -8,7 +8,7 @@ import torch
 from fotnuf.data.features import FeatureStore
 from fotnuf.data.mmkg import MMKGData, Triple
 from fotnuf.downstream.retrieval import jaccard, retrieve_candidate_triples, tokenize, triple_text
-from fotnuf.models.fotnuf import FoTNuFModel
+from fotnuf.models.fotnuf import NuGATModel
 
 
 @dataclass
@@ -21,7 +21,7 @@ class ConceptDecision:
 
 @torch.no_grad()
 def score_candidate_concept(
-    model: FoTNuFModel,
+    model: NuGATModel,
     data: MMKGData,
     feature_store: FeatureStore,
     concept: str,
@@ -54,7 +54,7 @@ def score_candidate_concept(
 
 
 def evaluate_concepts(
-    model: FoTNuFModel,
+    model: NuGATModel,
     data: MMKGData,
     feature_store: FeatureStore,
     rows: Iterable[Dict[str, object]],

@@ -1,9 +1,6 @@
-# FoTNuF
+# NuGAT
 
-FoTNuF is a runnable implementation of Functional Optimal Transport with Nash Utility
-Fusion for multimodal knowledge graph completion. The code follows the paper modules:
-heterogeneous modality encoding, Functional OT alignment, Nash utility fusion, KGC
-training, filtered ranking evaluation, QA evidence reranking, and concept verification.
+Multimodal reasoning requires models to ground task-relevant evidence from heterogeneous modalities, such as text, images, audio, video, and structural. Despite recent progress, existing methods often yield fragmented evidence grounding and rely on fixed alignment costs, predefined shared spaces, or static fusion weights. As a result, they struggle to explicitly model evidence-anchor correspondences and remain vulnerable to modality dominance, where strong modalities overwhelm weaker but complementary ones. We propose NuGAT, a general evidence-grounded multimodal alignment and fusion framework based on Attention Transport (AT) and Nash Utility Fusion (NUF). AT formulates evidence grounding as a structured evidence-anchor correspondence learning problem, in which modality-specific evidence units are adaptively transported to evidence anchors through attention-guided and structure-aware transport. This design produces explicit and interpretable evidence-anchor correspondences beyond fixed alignment costs. NUF treats each modality as a utility-bearing modality and estimates its utility gain by comparing its alignment quality with a modality-specific disagreement state. Rather than using utility gain as a scalar fusion weight, NuGAT uses it to control modality-specific subspace retention, preserving reliable evidence directions while suppressing noisy or weakly grounded signals. Experiments on multimodal QA and concept verification demonstrate the effectiveness of NuGAT. Compared with the recent strongest baseline, NuGAT achieves an average improvement of 3.37 across audio-visual QA under fixed answerers.
 
 The default pipeline downloads only dataset split files. Hugging Face model ids are recorded
 for reproducibility, but model weights are not downloaded by default. When released modality
@@ -54,18 +51,20 @@ directory and set `feature_source: released` in the config.
 
 ## Paper Hyperparameters Covered
 
-The default config includes the paper values:
+The default implementation follows the paper's reported configuration for evidence grounding and utility-guided fusion:
 
 - learning rate: `1e-4`
 - batch size: `1024`
 - maximum epochs: `1000`
 - scoring hidden dimension: `256`
-- Functional OT transport cost strength `eta`: `5e-1`
-- OT entropy regularization `gamma`: `1e-1`
+- attention transport temperature `tau_at`: `1e-1`
+- utility temperature `tau_u`: `1.5e-1`
+- residual fusion coefficient `lambda`: `2e-1`
+- subspace gate temperature `tau_g`: `5e-2`
 - Nash utility loss weight `lambda_nash`: `5e-2`
 - parameter regularization `lambda_reg`: `1e-5`
 - early stopping by validation MRR
-- uniform OT marginals
+- uniform transport marginals
 - Sinkhorn iterations and Nash fusion iterations
 
 ## No Implicit Model Downloads

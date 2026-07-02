@@ -9,7 +9,7 @@ from tqdm import tqdm
 from fotnuf.config import EvaluationConfig
 from fotnuf.data.features import FeatureStore
 from fotnuf.data.mmkg import MMKGData
-from fotnuf.models.fotnuf import FoTNuFModel
+from fotnuf.models.fotnuf import NuGATModel
 
 Triple = Tuple[int, int, int]
 
@@ -80,7 +80,7 @@ def _candidate_triples(triple: Triple, candidates: torch.LongTensor, side: str) 
 
 @torch.no_grad()
 def evaluate_ranking(
-    model: FoTNuFModel,
+    model: NuGATModel,
     data: MMKGData,
     feature_store: FeatureStore,
     triples: torch.LongTensor,

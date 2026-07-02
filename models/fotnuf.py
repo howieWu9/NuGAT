@@ -10,7 +10,8 @@ from fotnuf.models.nash_fusion import FusionOutput, NashUtilityFusion
 from fotnuf.models.scoring import DistMultScorer
 
 
-class FoTNuFModel(nn.Module):
+class NuGATModel(nn.Module):
+    """NuGAT: evidence-grounded multimodal fusion with Attention Transport and Nash Utility Fusion."""
     def __init__(
         self,
         num_relations: int,
@@ -21,11 +22,13 @@ class FoTNuFModel(nn.Module):
         cost_hidden_dim: int = 256,
         scorer_hidden_dim: int = 256,
         dropout: float = 0.1,
-        eta: float = 5.0e-1,
-        gamma: float = 1.0e-1,
+        eta: float = 1.0e-1,
+        gamma: float = 1.5e-1,
         epsilon: float = 1.0e-8,
         sinkhorn_iterations: int = 20,
         fusion_iterations: int = 2,
+        residual_weight: float = 2.0e-1,
+        gate_temperature: float = 5.0e-2,
     ) -> None:
         super().__init__()
         self.modality_dims = dict(modality_dims)
@@ -44,6 +47,8 @@ class FoTNuFModel(nn.Module):
             epsilon=epsilon,
             sinkhorn_iterations=sinkhorn_iterations,
             fusion_iterations=fusion_iterations,
+            residual_weight=residual_weight,
+            gate_temperature=gate_temperature,
         )
         self.scorer = DistMultScorer(
             input_dim=self.fused_dim,
@@ -118,4 +123,7 @@ class FoTNuFModel(nn.Module):
             "negative_scores": neg_scores,
             "nash_loss": 0.5 * (pos_nash + neg_nash),
         }
+
+
+FoTNuFModel = NuGATModel
 

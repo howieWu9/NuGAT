@@ -13,7 +13,7 @@ from tqdm import tqdm
 from fotnuf.config import ExperimentConfig
 from fotnuf.data.features import FeatureStore
 from fotnuf.data.mmkg import MMKGData, TripleDataset
-from fotnuf.models.fotnuf import FoTNuFModel
+from fotnuf.models.fotnuf import NuGATModel
 from fotnuf.training.checkpoint import save_checkpoint
 from fotnuf.training.metrics import evaluate_ranking
 from fotnuf.training.negative_sampling import NegativeSampler
@@ -36,8 +36,8 @@ def resolve_device(name: str) -> torch.device:
     return torch.device(name)
 
 
-def build_model(config: ExperimentConfig, data: MMKGData, feature_store: FeatureStore) -> FoTNuFModel:
-    model = FoTNuFModel(
+def build_model(config: ExperimentConfig, data: MMKGData, feature_store: FeatureStore) -> NuGATModel:
+    model = NuGATModel(
         num_relations=data.num_relations,
         modality_dims={m: feature_store.dims[m] for m in config.modality_order},
         modality_order=config.modality_order,

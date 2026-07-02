@@ -7,7 +7,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from fotnuf.models.functional_ot import (
+from fotnuf.models.attention_transport import (
     CostNetwork,
     entropy_regularizer,
     project_with_plan,
@@ -33,11 +33,13 @@ class NashUtilityFusion(nn.Module):
         support_units: int,
         cost_hidden_dim: int,
         dropout: float,
-        eta: float,
-        gamma: float,
-        epsilon: float,
-        sinkhorn_iterations: int,
-        fusion_iterations: int,
+        eta: float = 1.0e-1,
+        gamma: float = 1.5e-1,
+        epsilon: float = 1.0e-8,
+        sinkhorn_iterations: int = 20,
+        fusion_iterations: int = 2,
+        residual_weight: float = 2.0e-1,
+        gate_temperature: float = 5.0e-2,
     ) -> None:
         super().__init__()
         self.modality_dims = dict(modality_dims)
@@ -49,6 +51,8 @@ class NashUtilityFusion(nn.Module):
         self.epsilon = epsilon
         self.sinkhorn_iterations = sinkhorn_iterations
         self.fusion_iterations = fusion_iterations
+        self.residual_weight = residual_weight
+        self.gate_temperature = gate_temperature
         self.fused_dim = sum(self.modality_dims[m] for m in self.modality_order)
         self.cost = CostNetwork(
             modality_dims=self.modality_dims,
@@ -104,6 +108,7 @@ class NashUtilityFusion(nn.Module):
         return fused, plans, projections
 
     def forward(self, features: Dict[str, torch.Tensor], relation: torch.Tensor) -> FusionOutput:
+        """Fuse grounded multimodal evidence via utility-guided subspace retention."""
         fused, plans, projections = self._initial_state(features)
         nash_terms: List[torch.Tensor] = []
         weights_history: List[torch.Tensor] = []
