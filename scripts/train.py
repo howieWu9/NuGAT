@@ -1,4 +1,4 @@
-"""Train NuGAT from explicit cached-feature manifests; see docs/usage.md."""
+"""Train NuGAT from explicit cached-feature manifests."""
 from __future__ import annotations
 
 import argparse

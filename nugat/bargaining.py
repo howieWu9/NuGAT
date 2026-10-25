@@ -3,7 +3,7 @@
 EGS and KSS are solved with an augmented Lagrangian, including per-example
 dual variables and constraint checks. This is a numerical local solver for a
 nonconvex neural model, not a guarantee of a globally optimal bargaining
-solution. See docs/bargaining.md for the declared experimental choices.
+solution. Solver settings and feasibility residuals are recorded with each run.
 """
 
 from __future__ import annotations

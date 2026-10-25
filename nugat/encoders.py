@@ -50,7 +50,7 @@ def _transformers() -> Any:
     try:
         import transformers
     except ImportError as exc:
-        raise ImportError("Feature extraction requires the 'encoders' optional dependencies: pip install -e '.[encoders]'") from exc
+        raise ImportError("Feature extraction requires transformers>=4.45,<5, sentence-transformers>=3,<6, Pillow, and soundfile") from exc
     return transformers
 
 
@@ -80,7 +80,7 @@ class FrozenSentenceEncoder(FrozenModule):
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
-            raise ImportError("SBERT extraction requires sentence-transformers; install '.[encoders]'") from exc
+            raise ImportError("SBERT extraction requires sentence-transformers>=3,<6") from exc
         super().__init__(SentenceTransformer(model_id, device=device, **options))
 
     @torch.inference_mode()

@@ -1,4 +1,4 @@
-"""Train protocol-matched Nash/EGS/KSS/UTS candidates; see docs/bargaining.md."""
+"""Train protocol-matched Nash/EGS/KSS/UTS candidates from cached features."""
 from __future__ import annotations
 
 import argparse

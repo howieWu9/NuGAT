@@ -40,8 +40,8 @@ class NuGAT(nn.Module):
 
     The modality state for the next QAT update is its latest grounded evidence.
     Shared Y^0 is the mean of the learnable initial modality evidence, and the
-    first alpha is uniform. These initial-state conventions are explicit in
-    docs/implementation.md because the original manuscript leaves them open.
+    first alpha is uniform. These are explicit implementation conventions
+    because the original manuscript leaves the initial states underspecified.
     """
 
     def __init__(
