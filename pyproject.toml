@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nugat"
+version = "0.2.0"
+description = "Evidence-grounded multimodal reasoning via query-conditioned attention transport and Nash utility fusion"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.2", "numpy>=1.24", "PyYAML>=6"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+encoders = ["transformers>=4.45,<5", "sentence-transformers>=3,<6", "Pillow>=10", "soundfile>=0.12"]
+
+[tool.setuptools.packages.find]
+include = ["nugat*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

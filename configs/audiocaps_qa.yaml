@@ -1,0 +1,24 @@
+dataset: AudioCaps-QA
+model:
+  qat_temperature: 0.1
+  utility_temperature: 0.15
+  residual_weight: 0.2
+  gate_temperature: 0.05
+  num_evidence_units: 16
+  evidence_dim: 256
+  iterations: 3
+  epsilon: 1.0e-08
+  qat_variant: qat
+  fusion_variant: nuf
+  objective: nash
+training:
+  epochs: 30
+  batch_size: 1024
+  learning_rate: 0.0001
+  seeds:
+  - 42
+  - 43
+  - 44
+  - 45
+  - 46
+  device: auto
