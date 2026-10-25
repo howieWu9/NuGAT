@@ -1,9 +1,3 @@
-"""Fixed-epoch Nash training and validation-only hyperparameter selection.
-
-This runner does not manufacture paper scores. Its validation Nash loss is a
-declared operational grid-search criterion; the supplied paper does not specify
-the original grid or validation selection metric.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -103,7 +97,7 @@ def validation_nash_loss(model: torch.nn.Module, loader: DataLoader,
 
 def fit(model: torch.nn.Module, train_loader: DataLoader, settings: TrainingSettings,
         device: torch.device, *, log_path: Path | None = None) -> tuple[list[dict[str, Any]], torch.optim.Adam]:
-    """Optimize only the model's Nash loss for the stated number of epochs."""
+
     if getattr(train_loader.dataset, "split", None) != "train":
         raise ValueError("Training only accepts the train split")
     model.to(device)
@@ -151,7 +145,7 @@ def _new_run_directory(path: Path) -> None:
 def _model_kwargs(config: Mapping[str, Any], dataset: ManifestDataset, *,
                   allow_alternative_objective: bool = False) -> dict[str, Any]:
     kwargs = dict(config.get("model", {}))
-    # These dimensions come from the actual frozen encoder features, not defaults.
+
     for key, inferred in (("modality_dims", dataset.schema.modality_dims),
                           ("query_dim", dataset.schema.query_dim)):
         if key in kwargs and kwargs[key] != inferred:
@@ -164,11 +158,7 @@ def _model_kwargs(config: Mapping[str, Any], dataset: ManifestDataset, *,
 
 def build_model(config: Mapping[str, Any], dataset: ManifestDataset, *,
                 allow_alternative_objective: bool = False):
-    """Construct from actual encoder dimensions and return checkpointable kwargs.
 
-    Alternative objectives are opt-in for dedicated ablation runners. This does
-    not change the standard runner's use of the Nash loss.
-    """
     from .model import NuGAT
 
     kwargs = _model_kwargs(config, dataset,
@@ -179,12 +169,7 @@ def build_model(config: Mapping[str, Any], dataset: ManifestDataset, *,
 def train_runs(config: Mapping[str, Any], manifest: str | Path, output: str | Path,
                *, validation: bool = False,
                metric_callback: Callable | None = None) -> dict[str, Any]:
-    """Run independent seeds; optional validation never reads test features.
 
-    A metric callback has signature ``callback(model, validation_loader,
-    device) -> float``. It must perform genuine downstream evaluation. The
-    runner records its identity instead of substituting a fake judge score.
-    """
     from .model import NuGAT
 
     settings = TrainingSettings.from_mapping(config.get("training", {}))
@@ -239,7 +224,6 @@ def train_runs(config: Mapping[str, Any], manifest: str | Path, output: str | Pa
     summary: dict[str, Any] = {
         "dataset": config.get("dataset"), "run_count": len(runs),
         "seeds": list(settings.seeds), "manifest_sha256": manifest_sha, "runs": runs,
-        "note": "Training/validation losses are not M.J. scores or reproduced paper results.",
     }
     if validation:
         key = "validation_metric" if metric_callback else "validation_nash_loss"
@@ -252,7 +236,7 @@ def train_runs(config: Mapping[str, Any], manifest: str | Path, output: str | Pa
 
 
 def load_checkpoint(path: str | Path, *, device: str | torch.device = "cpu"):
-    """Load tensor/state dictionaries without enabling arbitrary pickle objects."""
+
     from .model import NuGAT
 
     checkpoint = torch.load(path, map_location=device, weights_only=True)
@@ -278,13 +262,7 @@ def grid_search(config: Mapping[str, Any], manifest: str | Path,
                 grid: Mapping[str, list[Any]], output: str | Path, *,
                 metric_callback: Callable | None = None, metric_name: str | None = None,
                 maximize: bool = False) -> dict[str, Any]:
-    """Search an explicitly supplied grid using validation data only.
 
-    A supplied grid is an experiment input, not a claim about the authors'
-    historical search range. By default this minimizes validation Nash loss.
-    Provide a genuine M.J. evaluation callback and maximize=True to select by
-    validation M.J. instead. Test metrics are never a selection criterion.
-    """
     if not grid or any(not isinstance(values, list) or not values for values in grid.values()):
         raise ValueError("Grid must map model parameter names to nonempty lists")
     tunable = {"qat_temperature", "utility_temperature", "residual_weight", "gate_temperature",
@@ -316,7 +294,6 @@ def grid_search(config: Mapping[str, Any], manifest: str | Path,
     result = {
         "selection_split": "validation", "metric": metric_name or "validation_nash_loss",
         "maximize": maximize, "grid": dict(grid), "best": best, "candidates": candidates,
-        "note": "This explicitly supplied grid is not inferred from the paper. Test data are not used for selection.",
     }
     _write_json(output / "selection.json", result)
     return result

@@ -1,4 +1,3 @@
-"""Summarize independently scored runs of one dataset/model/protocol."""
 from __future__ import annotations
 
 import argparse
@@ -11,8 +10,8 @@ from nugat.evaluation import summarize_runs
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("runs", nargs="+", help="Per-seed JSON results from evaluate.py score")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("runs", nargs="+")
     parser.add_argument("--expected-runs", type=int, default=5)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()

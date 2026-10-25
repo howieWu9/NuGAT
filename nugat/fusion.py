@@ -1,13 +1,3 @@
-"""Nash Utility Fusion, corresponding to NuGAT Eqs. (11)--(17).
-
-The forward pass uses the paper's *binary* Gaussian subspace masks. The paper
-does not specify how to differentiate the indicator. Training therefore uses a
-straight-through estimator whose derivative is that of the Gaussian retention
-probability. Evaluation uses the sign of the Gaussian mean, unless stochastic
-evaluation is explicitly requested. These are implementation choices rather
-than additional equations claimed to appear in the manuscript.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,12 +28,7 @@ def utility_objective(
     epsilon: float = 1e-8,
     reduction: str = "mean",
 ) -> Tensor:
-    """Compute Eq. (17), or the sum-utility alternative, without log underflow.
 
-    ``log_utilities`` has shape ``[batch, modalities]``. Objectives are summed
-    over modalities, then averaged over the batch unless ``reduction='none'``.
-    Equal-gain and Kalai--Smorodinsky constraints are not approximated here.
-    """
     if log_utilities.ndim != 2 or log_utilities.shape[1] == 0:
         raise ValueError("log_utilities must have shape [batch, modalities].")
     if not math.isfinite(epsilon) or epsilon <= 0:
@@ -65,15 +50,7 @@ def utility_objective(
 
 
 def _masked_svd(values: Tensor, gates: Tensor) -> Tensor:
-    """Eq. (12), with a stable gradient convention at degenerate spectra.
 
-    Distinct nonzero singular values use ordinary differentiable thin SVD. At
-    repeated/zero singular values, the singular basis is not differentiable;
-    keep its computed value fixed for backpropagation and differentiate the
-    equivalent projection ``Y V diag(g) V^T``. Forward values remain the same
-    reconstruction. This convention must not be described as an exact SVD
-    derivative at a degenerate spectrum.
-    """
     left, singular, right_t = torch.linalg.svd(values, full_matrices=False)
     if not torch.is_grad_enabled() or not (values.requires_grad or gates.requires_grad):
         return (left * (singular * gates).unsqueeze(-2)) @ right_t
@@ -87,8 +64,7 @@ def _masked_svd(values: Tensor, gates: Tensor) -> Tensor:
     if not bool(degenerate.any()):
         return (left * (singular * gates).unsqueeze(-2)) @ right_t
 
-    # Do not route a zero gradient through the invalid SVD graph: 0 * NaN is
-    # still NaN in its backward. Recompute only nondegenerate batch members.
+
     result = torch.empty_like(values)
     valid = ~degenerate
     if bool(valid.any()):
@@ -105,23 +81,7 @@ def _masked_svd(values: Tensor, gates: Tensor) -> Tensor:
 
 
 class NashUtilityFusion(nn.Module):
-    """One NUF iteration with utility feedback for the following iteration.
 
-    ``retention`` is alpha at the *current* iteration. Eq. (16) is evaluated
-    after fusion and returned as ``next_retention``; this avoids a circular
-    dependency between the current utility and the current gate.
-
-    Supported fusion variants:
-      * ``nuf``: Eqs. (11)--(13), with utility-derived alpha.
-      * ``uniform`` / ``uwf``: directly average the grounded representations.
-      * ``subspace_weighted`` / ``swf``: Section 5.3.3 top-k reconstruction-error
-        weighting. ``subspace_rank`` is required because the paper gives no k;
-        Y-bar is taken to be the mean grounded representation.
-      * ``unweighted_subspace``: diagnostic variant with uniform gate strengths.
-
-    UWF and SWF use the direct aggregation stated in Section 5.3.3; the residual
-    update in Eq. (13) belongs to NUF, not to these two baseline definitions.
-    """
 
     def __init__(
         self,
@@ -177,9 +137,7 @@ class NashUtilityFusion(nn.Module):
         ):
             raise ValueError(f"SWF requires an explicit subspace_rank in [1, {self.rank}].")
 
-        # The paper does not give a threshold initialization. Match the initial
-        # uniform alpha so every direction initially has 50% retention in
-        # multimodal training; for one modality use a neutral threshold of 0.5.
+
         beta_initial = min(1.0 / len(self.modalities), 0.5)
         beta_logit = math.log(beta_initial / (1 - beta_initial))
         self.threshold_logits = nn.Parameter(
@@ -188,7 +146,7 @@ class NashUtilityFusion(nn.Module):
 
     @property
     def thresholds(self) -> Tensor:
-        """Direction-specific beta in [0, 1], indexed [iteration, modality, rank]."""
+
         return self.threshold_logits.sigmoid()
 
     def _gate(
@@ -251,8 +209,7 @@ class NashUtilityFusion(nn.Module):
         ):
             raise ValueError("retention must be nonnegative and sum to one per example.")
 
-        # SVD and small utility exponentials are evaluated in at least float32.
-        # This cast remains differentiable under mixed-precision model training.
+
         computation_dtype = (
             torch.float32 if previous_shared.dtype in {torch.float16, torch.bfloat16}
             else previous_shared.dtype
@@ -281,8 +238,8 @@ class NashUtilityFusion(nn.Module):
                 reference = torch.stack(list(grounded_work.values()), dim=1).mean(dim=1)
                 errors = []
                 for modality in self.modalities:
-                    # Top-k bases are treated as fixed when their spectra are
-                    # degenerate, using the same forward-preserving convention.
+
+
                     values = grounded_work[modality]
                     _, singular, right_t = torch.linalg.svd(values, full_matrices=False)
                     scale = singular.detach().amax(dim=-1).clamp_min(torch.finfo(values.dtype).tiny)
@@ -291,8 +248,8 @@ class NashUtilityFusion(nn.Module):
                     bad = (singular.detach().amin(dim=-1) <= tolerance) | (
                         gaps <= tolerance.unsqueeze(-1)
                     ).any(dim=-1)
-                    # Recompute only well-defined bases to avoid NaN SVD
-                    # gradients on singular or repeated-spectrum inputs.
+
+
                     basis_t = right_t.detach().clone()
                     if bool((~bad).any()) and torch.is_grad_enabled():
                         _, _, differentiable_basis = torch.linalg.svd(values[~bad], full_matrices=False)
@@ -309,8 +266,7 @@ class NashUtilityFusion(nn.Module):
         else:
             fused = (1 - self.residual_weight) * aggregate + self.residual_weight * previous_work
 
-        # Eq. (14) contrasts modalities at the SAME evidence-unit index. It is
-        # not an InfoNCE loss over evidence units or examples in the batch.
+
         stacked_grounded = torch.stack([grounded_work[m] for m in self.modalities], dim=1)
         similarities = F.cosine_similarity(stacked_grounded, fused[:, None, :, :], dim=-1)
         contrastive = -F.log_softmax(similarities, dim=1).mean(dim=-1)

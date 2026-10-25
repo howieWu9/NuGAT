@@ -1,4 +1,3 @@
-"""Train protocol-matched Nash/EGS/KSS/UTS candidates from cached features."""
 from __future__ import annotations
 
 import argparse
@@ -27,17 +26,17 @@ def write_json(path: Path, value: object) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--solution", choices=("nash", "egs", "kss", "uts"), required=True)
-    parser.add_argument("--seed", type=int, help="Run one seed instead of the configured independent seeds")
-    parser.add_argument("--ideal-epochs", type=int, help="Per-modality KSS ideal search budget; defaults to training epochs")
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--ideal-epochs", type=int)
     parser.add_argument("--dual-update-every", type=int, default=3)
     parser.add_argument("--initial-penalty", type=float, default=1.0)
     parser.add_argument("--equality-tolerance", type=float, default=1e-3)
-    parser.add_argument("--allow-infeasible", action="store_true", help="Keep explicitly marked failed candidates; does not relabel them as converged")
+    parser.add_argument("--allow-infeasible", action="store_true")
     args = parser.parse_args()
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
     if not isinstance(config, dict):
@@ -81,8 +80,8 @@ def main() -> None:
         def evaluator(model: torch.nn.Module):
             def evaluate(indices: torch.Tensor) -> torch.Tensor:
                 batch = collate_evidence([dataset[int(i)] for i in indices]).to(device)
-                # Fixed minibatch identities/order give common Gaussian noise
-                # across candidate runs and repeated augmented-Lagrangian calls.
+
+
                 seed_bytes = f"{seed}:".encode() + indices.numpy().tobytes()
                 batch_seed = int.from_bytes(hashlib.sha256(seed_bytes).digest()[:4], "little")
                 generator = torch.Generator(device=device).manual_seed(batch_seed)
@@ -174,8 +173,7 @@ def main() -> None:
         write_json(run_dir / "result.json", report)
         summaries.append(report)
     summary = {"solution": args.solution, "runs": summaries,
-               "all_candidates_feasible": not any_infeasible,
-               "note": "No M.J. scores or global-optimality guarantees are inferred from training."}
+               "all_candidates_feasible": not any_infeasible}
     write_json(args.output / "summary.json", summary)
     print(json.dumps(summary, indent=2))
     if any_infeasible and not args.allow_infeasible:

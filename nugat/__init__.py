@@ -1,4 +1,3 @@
-"""Evidence-grounded multimodal reasoning with QAT and NUF."""
 from .model import NuGAT, NuGATOutput
 
 __all__ = ["NuGAT", "NuGATOutput"]

@@ -1,4 +1,3 @@
-"""Train NuGAT from explicit cached-feature manifests."""
 from __future__ import annotations
 
 import argparse
@@ -14,11 +13,11 @@ from nugat.training import train_runs
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--validate", action="store_true", help="Report validation Nash loss, not M.J.")
+    parser.add_argument("--validate", action="store_true")
     args = parser.parse_args()
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
     if not isinstance(config, dict):

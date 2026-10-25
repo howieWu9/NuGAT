@@ -67,8 +67,8 @@ def test_audio_loader_does_not_implicitly_mix_channels(tmp_path):
 
 
 def test_extraction_manifest_is_accepted_by_training_dataset(tmp_path, monkeypatch):
-    # A tiny deterministic test double validates I/O only; it is not an encoder
-    # fallback and is never reachable through the feature-extraction CLI.
+
+
     spec = importlib.util.spec_from_file_location("extract_features_test", Path(__file__).parents[1] / "scripts" / "extract_features.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

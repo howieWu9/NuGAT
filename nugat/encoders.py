@@ -1,10 +1,3 @@
-"""Frozen, pretrained feature extraction for the modality families in Section 5.1.
-
-Checkpoint identifiers and revisions are supplied by the caller. No embedding
-is synthesized from an example ID, filename, or pseudo-random generator.
-These adapters define explicit extraction conventions; the manuscript does
-not identify exact encoder checkpoints or all preprocessing settings.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,12 +9,12 @@ from torch import Tensor, nn
 
 
 def freeze_module(model: nn.Module) -> nn.Module:
-    """Disable parameter gradients and stochastic training layers."""
+
     return model.requires_grad_(False).eval()
 
 
 class FrozenModule(nn.Module):
-    """Keep the wrapped model frozen even if its parent enters train mode."""
+
 
     def __init__(self, model: nn.Module) -> None:
         super().__init__()
@@ -55,15 +48,15 @@ def _transformers() -> Any:
 
 
 def _load_pretrained(model_class: Any, model_id: str, options: dict[str, Any]) -> nn.Module:
-    """Reject checkpoints that silently leave encoder parameters uninitialized."""
+
     model, loading = model_class.from_pretrained(model_id, output_loading_info=True, **options)
     missing = loading.get("missing_keys", [])
     mismatched = loading.get("mismatched_keys", [])
     errors = loading.get("error_msgs", [])
     if missing or mismatched or errors:
         raise ValueError(f"Checkpoint does not fully initialize the requested encoder: missing={missing}, mismatched={mismatched}, errors={errors}")
-    # Unused task-head keys are legitimate when loading a pretrained encoder
-    # from a classification/CTC checkpoint; they do not create random features.
+
+
     return model
 
 
@@ -73,7 +66,7 @@ def _check_samples(samples: Sequence[Any]) -> None:
 
 
 class FrozenSentenceEncoder(FrozenModule):
-    """One SBERT embedding per text sample, without extra L2 normalization."""
+
 
     def __init__(self, model_id: str, *, revision: str | None = None, device: str = "cpu", allow_download: bool = False) -> None:
         options = _loading_options(model_id, revision, allow_download)
@@ -92,7 +85,7 @@ class FrozenSentenceEncoder(FrozenModule):
 
 
 class FrozenImageEncoder(FrozenModule):
-    """One CLIP projected image embedding per image or supplied image crop."""
+
 
     def __init__(self, model_id: str, *, revision: str | None = None, device: str = "cpu", allow_download: bool = False) -> None:
         options = _loading_options(model_id, revision, allow_download)
@@ -122,7 +115,7 @@ class FrozenImageEncoder(FrozenModule):
 
 
 def load_video_frames(path: str | Path, expected_frames: int) -> np.ndarray:
-    """Read explicitly decoded uint8 RGB clips in [time, channel, height, width]."""
+
     frames = np.load(path, allow_pickle=False)
     if frames.dtype != np.uint8 or frames.ndim != 4 or frames.shape[1] != 3:
         raise ValueError("Video input must be a uint8 RGB .npy array with shape [frames, 3, height, width]")
@@ -134,7 +127,7 @@ def load_video_frames(path: str | Path, expected_frames: int) -> np.ndarray:
 
 
 class FrozenVideoEncoder(FrozenModule):
-    """One VideoMAE feature per decoded clip, averaging last-layer patch tokens."""
+
 
     def __init__(self, model_id: str, *, revision: str | None = None, device: str = "cpu", allow_download: bool = False) -> None:
         options = _loading_options(model_id, revision, allow_download)
@@ -151,7 +144,7 @@ class FrozenVideoEncoder(FrozenModule):
         outputs = []
         for path in samples:
             frames = load_video_frames(path, self.num_frames)
-            # Processor resizing/rescaling is taken from the selected checkpoint.
+
             images = [np.transpose(frame, (1, 2, 0)) for frame in frames]
             inputs = self.processor(images=images, return_tensors="pt")
             pixels = inputs["pixel_values"].to(self.device)
@@ -160,7 +153,7 @@ class FrozenVideoEncoder(FrozenModule):
 
 
 def load_audio_waveform(path: str | Path, sampling_rate: int) -> np.ndarray:
-    """Read mono audio without implicitly resampling or downmixing channels."""
+
     path = Path(path)
     if not isinstance(sampling_rate, int) or sampling_rate < 1:
         raise ValueError("An explicit positive integer audio sampling_rate is required")
@@ -182,7 +175,7 @@ def load_audio_waveform(path: str | Path, sampling_rate: int) -> np.ndarray:
 
 
 class FrozenAudioEncoder(FrozenModule):
-    """One wav2vec2 feature per segment, averaging unpadded last-layer frames."""
+
 
     def __init__(self, model_id: str, *, revision: str | None = None, device: str = "cpu", allow_download: bool = False) -> None:
         options = _loading_options(model_id, revision, allow_download)
@@ -205,7 +198,7 @@ class FrozenAudioEncoder(FrozenModule):
             waveform = load_audio_waveform(item["path"], rate)
             inputs = self.processor(waveform, sampling_rate=rate, return_tensors="pt", padding=False)
             inputs = {key: value.to(self.device) for key, value in inputs.items()}
-            # Processing each segment independently avoids averaging padding.
+
             outputs.append(self.model(**inputs).last_hidden_state.mean(dim=1).cpu().float())
         return torch.cat(outputs, dim=0)
 

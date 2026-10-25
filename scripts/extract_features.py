@@ -1,11 +1,3 @@
-"""Extract actual frozen encoder features into the NuGAT cached-feature schema.
-
-Raw JSONL records contain id, split, query, and modalities. text is a list of
-strings; image a list of image paths; video a list of uint8 RGB TCHW .npy clips;
-audio a list of {path, sampling_rate} objects. Paths are relative to the raw
-manifest. A JSON encoder config supplies query and modality objects containing
-model_id and optional revision; no historical checkpoint is guessed.
-"""
 from __future__ import annotations
 
 import argparse
@@ -85,8 +77,8 @@ def extract_manifest(raw_manifest: Path, output_manifest: Path, encoder_config: 
                 prepared = [{"path": str((raw_manifest.parent / item["path"]).resolve()), "sampling_rate": item["sampling_rate"]} for item in samples]
             else:
                 prepared = [(raw_manifest.parent / path).resolve() for path in samples]
-            # Keep only actual inputs for downstream answerers, never arbitrary
-            # annotations from raw sample dictionaries.
+
+
             result["raw_modalities"][name] = [str(value) if isinstance(value, Path) else value for value in prepared]
             features = encoders[name].encode(prepared, batch_size=batch_size).numpy()
             if features.ndim != 2 or features.shape[0] != len(samples) or not np.isfinite(features).all():
@@ -94,7 +86,7 @@ def extract_manifest(raw_manifest: Path, output_manifest: Path, encoder_config: 
             path = feature_dir / f"{index:08d}_{name}.npy"
             np.save(path, features.astype(np.float32, copy=False), allow_pickle=False)
             result["modalities"][name] = path.relative_to(output_manifest.parent).as_posix()
-        result["feature_provenance"] = {"encoders": encoder_config, "frozen": True, "extraction": "SBERT sentences; CLIP projected images; mean VideoMAE tokens per clip; mean wav2vec2 frames per unpadded segment"}
+        result["feature_provenance"] = {"encoders": encoder_config, "frozen": True}
         output_records.append(result)
     temporary = output_manifest.with_suffix(output_manifest.suffix + ".tmp")
     temporary.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n" for record in output_records), encoding="utf-8")
@@ -102,13 +94,13 @@ def extract_manifest(raw_manifest: Path, output_manifest: Path, encoder_config: 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--manifest", type=Path, required=True, help="Raw JSONL manifest")
-    parser.add_argument("--output", type=Path, required=True, help="New cached-feature JSONL manifest")
-    parser.add_argument("--encoder-config", type=Path, required=True, help="JSON with query/text/image/audio/video checkpoint specifications")
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--encoder-config", type=Path, required=True)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--allow-download", action="store_true", help="Allow loading requested pretrained weights from Hugging Face")
+    parser.add_argument("--allow-download", action="store_true")
     args = parser.parse_args()
     config = json.loads(args.encoder_config.read_text(encoding="utf-8"))
     extract_manifest(args.manifest, args.output, config, device=args.device, allow_download=args.allow_download, batch_size=args.batch_size)

@@ -1,4 +1,3 @@
-"""Export real grounding/adapter predictions, or score recorded predictions."""
 from __future__ import annotations
 
 import argparse
@@ -68,8 +67,8 @@ def _infer(args: argparse.Namespace) -> None:
     output.mkdir(parents=True, exist_ok=True)
     artifacts = output / "grounding"
     artifacts.mkdir(exist_ok=True)
-    # A nonempty destination is rejected to prevent mixing previous predictions
-    # or silently overwriting an experiment with a different adapter.
+
+
     predictions_path = output / "predictions.jsonl"
     if predictions_path.exists():
         raise FileExistsError(f"Prediction output already exists: {predictions_path}")
@@ -88,8 +87,8 @@ def _infer(args: argparse.Namespace) -> None:
                     matrix = plan[i][valid].detach().float().cpu().numpy()
                     transport[modality] = matrix
                     arrays[f"transport_{modality}"] = matrix
-                    # The mean over evidence columns sums to one and ranks
-                    # native sources; this is a trace, not a benchmark label.
+
+
                     mass = matrix.mean(axis=1)
                     order = np.argsort(-mass, kind="stable")
                     rankings[modality] = [{"source_index": int(j), "mass": float(mass[j])} for j in order]
@@ -129,38 +128,37 @@ def _infer(args: argparse.Namespace) -> None:
                   "task": args.task, "predictor": args.predictor, "predictor_options": predictor_options,
                   "judge": args.judge, "judge_options": judge_options, "num_examples": len(dataset),
                   "model_kwargs": kwargs, "export_only": predictor is None}
-    provenance["retention_semantics"] = {"retention": "alpha^L used by the final subspace gate",
-                                        "next_retention": "alpha^(L+1) computed from final utilities"}
+
     (output / "provenance.json").write_text(json.dumps(provenance, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     print(f"Exported {len(dataset)} examples to {predictions_path}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
-    score = sub.add_parser("score", help="Score actual predictions/judgements")
+    score = sub.add_parser("score")
     score.add_argument("--predictions", required=True)
     score.add_argument("--task", choices=("mqa", "mcv"), required=True)
     score.add_argument("--dataset", required=True)
     score.add_argument("--seed", type=int, required=True)
-    score.add_argument("--experiment-id", required=True, help="Shared identifier for identical model/config and protocol across seeds")
+    score.add_argument("--experiment-id", required=True)
     score.add_argument("--answerer")
-    score.add_argument("--judge-protocol", help="Judge checkpoint and exact prompt/version identifier")
-    score.add_argument("--score-max", type=float, help="Explicit judge scale maximum; required for MQA")
+    score.add_argument("--judge-protocol")
+    score.add_argument("--score-max", type=float)
     score.add_argument("--threshold", type=float, default=0.5)
-    score.add_argument("--expected-ids", help="JSONL containing the complete evaluation id set")
+    score.add_argument("--expected-ids")
     score.add_argument("--output", required=True)
     score.set_defaults(function=_score)
-    infer = sub.add_parser("infer", help="Export grounding; optionally run actual frozen-model adapters")
+    infer = sub.add_parser("infer")
     infer.add_argument("--manifest", required=True)
     infer.add_argument("--checkpoint", required=True)
     infer.add_argument("--split", choices=("validation", "test"), default="test")
     infer.add_argument("--task", choices=("mqa", "mcv"), default="mqa")
     infer.add_argument("--batch-size", type=int, default=16)
     infer.add_argument("--device", default="auto")
-    infer.add_argument("--predictor", help="Trusted module:factory producing the actual frozen answerer/verifier")
-    infer.add_argument("--predictor-options", help="JSON configuration for the model factory")
-    infer.add_argument("--judge", help="Trusted module:factory producing the actual frozen Llama-3 judge")
+    infer.add_argument("--predictor")
+    infer.add_argument("--predictor-options")
+    infer.add_argument("--judge")
     infer.add_argument("--judge-options")
     infer.add_argument("--output", required=True)
     infer.set_defaults(function=_infer)

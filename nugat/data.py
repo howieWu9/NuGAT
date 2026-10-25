@@ -1,10 +1,3 @@
-"""Read cached, real modality features; never synthesize features from identifiers.
-
-Each JSONL record contains ``id``, ``split`` (train/validation/test), ``query``,
-``query_features`` (a .npy vector), and ``modalities`` (name -> .npy matrix).
-Paths are relative to the manifest. Optional answer/evidence metadata is passed
-through to downstream evaluation, but is not used by the Nash training loss.
-"""
 from __future__ import annotations
 
 import json
@@ -44,7 +37,7 @@ class EvidenceBatch:
 
 
 def read_manifest(path: str | Path) -> list[dict[str, Any]]:
-    """Validate all split identifiers before selecting a training/evaluation split."""
+
     path = Path(path)
     records: list[dict[str, Any]] = []
     seen: dict[str, str] = {}
@@ -97,7 +90,7 @@ def _feature_path(base: Path, value: str) -> Path:
 
 
 def _read_array(path: Path, dimensions: int, *, metadata_only: bool = False) -> np.ndarray:
-    # Object arrays/pickle loading are deliberately unsupported.
+
     try:
         array = np.load(path, allow_pickle=False, mmap_mode="r" if metadata_only else None)
     except (ValueError, OSError) as exc:
@@ -114,12 +107,7 @@ def _read_array(path: Path, dimensions: int, *, metadata_only: bool = False) -> 
 
 
 class ManifestDataset(Dataset):
-    """A single explicit split with consistent encoder dimensions.
 
-    All selected feature headers are checked at construction; actual feature
-    values are loaded on demand and checked for NaN/Inf. A schema from the train
-    split can be passed when loading validation or test data.
-    """
 
     def __init__(self, manifest: str | Path, split: str,
                  schema: FeatureSchema | None = None) -> None:
@@ -168,7 +156,7 @@ class ManifestDataset(Dataset):
 
 
 def collate_evidence(samples: Sequence[Mapping[str, Any]]) -> EvidenceBatch:
-    """Pad source samples, retaining a Boolean validity mask for QAT softmax."""
+
     if not samples:
         raise ValueError("Cannot collate an empty batch")
     names = list(samples[0]["features"])

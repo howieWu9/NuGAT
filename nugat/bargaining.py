@@ -1,11 +1,3 @@
-"""Explicit constrained alternatives to the Nash utility objective.
-
-EGS and KSS are solved with an augmented Lagrangian, including per-example
-dual variables and constraint checks. This is a numerical local solver for a
-nonconvex neural model, not a guarantee of a globally optimal bargaining
-solution. Solver settings and feasibility residuals are recorded with each run.
-"""
-
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -79,14 +71,7 @@ class BargainingConvergenceError(RuntimeError):
 
 
 def bargaining_terms(log_utilities: Tensor, solution: str, log_ideals: Tensor | None = None) -> tuple[Tensor, Tensor]:
-    """Return per-example negative min utility and exact-equivalent equalities.
 
-    EGS: objective -min(U), with U_m = U_0.
-    KSS: objective -min(U / ideal), with U_m / ideal_m = U_0 / ideal_0.
-    Because utilities are positive, equality of their logarithms is equivalent
-    to equality of the original values. Log residuals avoid treating two tiny
-    but very unequal utilities as feasible under an absolute utility tolerance.
-    """
     if log_utilities.ndim != 2 or log_utilities.shape[1] < 2:
         raise ValueError("Bargaining requires [batch, modalities] with at least two modalities.")
     if not bool(torch.isfinite(log_utilities).all()):
@@ -123,7 +108,7 @@ def _checked_logs(evaluate: UtilityCallback, indices: Tensor, modalities: int) -
 
 
 def evaluate_log_utilities(evaluate: UtilityCallback, examples: int, modalities: int, batch_size: int) -> Tensor:
-    """Evaluate in stable ID order, returning a detached CPU tensor."""
+
     if min(examples, modalities, batch_size) < 1:
         raise ValueError("Dataset size, modalities, and batch_size must be positive.")
     pieces = []
@@ -145,15 +130,7 @@ def solve_bargaining(
     settings: BargainingSettings | None = None,
     allow_infeasible: bool = False,
 ) -> BargainingResult:
-    """Fit a constrained neural candidate with per-query multiplier updates.
 
-    ``evaluate(indices)`` must map stable integer training IDs to log utilities
-    and be deterministic for a fixed parameter state. For stochastic gates use
-    a fixed noise realization (common random numbers) and separately audit the
-    chosen evaluation gate rule. Neither test nor validation data enter this
-    optimization. Equality feasibility, not global optimality, is certified by
-    the returned numerical residual.
-    """
     settings = settings or BargainingSettings()
     settings.validate()
     if examples < 1 or modalities < 2:
@@ -229,13 +206,7 @@ def estimate_log_ideals(
     batch_size: int = 1024,
     learning_rate: float = 1e-4,
 ) -> tuple[Tensor, dict]:
-    """Estimate attainable ideal utilities by separate modality maximizations.
 
-    Each factory call must create the same initial model, retaining *all*
-    modalities. Run m minimizes -U_m; the largest observed U_m for each example
-    over initialization and epoch checkpoints is stored. These are attained
-    estimates, not proven upper bounds or globally maximized utility values.
-    """
     if min(examples, modalities, epochs, batch_size) < 1:
         raise ValueError("Sizes and the ideal-point epoch budget must be positive.")
     if not math.isfinite(learning_rate) or learning_rate <= 0:

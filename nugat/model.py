@@ -1,9 +1,3 @@
-"""NuGAT: recurrent QAT grounding and Nash Utility Fusion.
-
-Each forward pass performs exactly ``iterations`` grounding/fusion updates.
-Inputs are frozen, real modality/query features; no ID-derived pseudo-features
-or knowledge-graph scoring objective is part of this model.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -36,13 +30,7 @@ class NuGATOutput:
 
 
 class NuGAT(nn.Module):
-    """Equations (3)--(17), with the revision's learnable Xavier evidence.
 
-    The modality state for the next QAT update is its latest grounded evidence.
-    Shared Y^0 is the mean of the learnable initial modality evidence, and the
-    first alpha is uniform. These are explicit implementation conventions
-    because the original manuscript leaves the initial states underspecified.
-    """
 
     def __init__(
         self,

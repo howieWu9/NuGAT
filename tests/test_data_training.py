@@ -1,4 +1,3 @@
-"""Small numerical fixtures test mechanics only; they are not benchmark data."""
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -104,7 +103,7 @@ def test_real_model_training_checkpoint_round_trip(tmp_path):
     from nugat.model import NuGAT
 
     manifest = write_fixture(tmp_path)
-    # Avoid rank-deficient fixtures when checking gradients of the SVD model.
+
     rng = np.random.default_rng(9)
     for i in range(4):
         np.save(tmp_path / f"text{i}.npy", rng.normal(size=(4, 4)).astype("float32"))

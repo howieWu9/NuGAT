@@ -85,7 +85,7 @@ def test_kss_requires_fixed_positive_ideal_utilities():
 
 @pytest.mark.parametrize("solution", ["nash", "egs", "kss", "uts"])
 def test_comparison_cli_runs_on_explicit_numerical_fixtures(tmp_path, monkeypatch, capsys, solution):
-    """Synthetic fixtures validate plumbing only, never manuscript results."""
+
     from scripts.train_bargaining import main
     from nugat.training import load_checkpoint
 

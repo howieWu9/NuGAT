@@ -1,4 +1,3 @@
-"""Search a user-specified hyperparameter grid using validation data only."""
 from __future__ import annotations
 
 import argparse
@@ -14,14 +13,13 @@ from nugat.training import grid_search, load_metric_callback
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--grid", type=Path, required=True,
-                        help="YAML mapping of model parameters to candidate lists; no historical grid is assumed")
+    parser.add_argument("--grid", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--metric-callback", help="Optional module:function for real validation M.J. evaluation")
-    parser.add_argument("--metric-name", help="Explicit name for a supplied validation metric")
+    parser.add_argument("--metric-callback")
+    parser.add_argument("--metric-name")
     parser.add_argument("--maximize", action="store_true")
     args = parser.parse_args()
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))

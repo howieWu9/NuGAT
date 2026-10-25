@@ -1,5 +1,3 @@
-"""Tests of NUF equations and differentiable hard-mask behavior."""
-
 import math
 
 import pytest

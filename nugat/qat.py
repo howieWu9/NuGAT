@@ -1,8 +1,3 @@
-"""Query-conditioned attention transport, corresponding to Eqs. (3)--(8).
-
-The source axis is dimension 1 throughout. QAT normalizes only that axis;
-it does not prescribe how much total mass a source sample must receive.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,16 +19,7 @@ class QATOutput:
 
 def balanced_transport(log_kernel: Tensor, valid: Tensor, iterations: int,
                        tolerance: float = 1e-3) -> Tensor:
-    """Compute the EOT/COT ablation with uniform two-sided marginals.
 
-    Sinkhorn operates on a unit-total plan with source marginal 1/s and
-    target marginal 1/n. Its output is multiplied by n for barycentric
-    aggregation, so every returned column sums to one and every valid row
-    approaches n/s. This rescaling does not remove the source constraint.
-    Residuals are checked every 20 iterations and at the supplied iteration
-    budget. Nonconverged plans raise rather than silently violating marginals.
-    Masked source positions have exactly zero mass.
-    """
     if iterations < 1:
         raise ValueError("Sinkhorn iterations must be positive")
     if not isfinite(tolerance) or tolerance <= 0:
@@ -44,13 +30,12 @@ def balanced_transport(log_kernel: Tensor, valid: Tensor, iterations: int,
         raise ValueError("Every example requires at least one valid source sample")
     if not bool(torch.isfinite(log_kernel.masked_select(valid.unsqueeze(-1))).all()):
         raise ValueError("Valid Sinkhorn log-kernel entries must be finite")
-    # Float32 accumulation is necessary when a caller uses mixed precision.
+
     work_dtype = torch.float64 if log_kernel.dtype == torch.float64 else torch.float32
     log_kernel = log_kernel.to(work_dtype).masked_fill(~valid.unsqueeze(-1), -torch.inf)
     batch, samples, units = log_kernel.shape
-    # Adding any row/column constant to the cost leaves balanced OT's optimum
-    # unchanged because BOTH marginals are fixed. Remove such constants for
-    # numerical stability without rescaling the cost or temperature.
+
+
     row_shift = log_kernel.amax(dim=2, keepdim=True).masked_fill(~valid.unsqueeze(-1), 0.0)
     log_kernel = log_kernel - row_shift
     log_kernel = log_kernel - log_kernel.amax(dim=1, keepdim=True)
@@ -60,8 +45,8 @@ def balanced_transport(log_kernel: Tensor, valid: Tensor, iterations: int,
     log_u = log_kernel.new_zeros(batch, samples)
     max_row_error = max_column_error = float("inf")
     for step in range(iterations):
-        # Mask *before* logsumexp: an all-minus-infinity row has undefined
-        # derivatives even if its result is subsequently masked away.
+
+
         row_inputs = (log_kernel + log_v.unsqueeze(1)).masked_fill(~valid.unsqueeze(-1), 0.0)
         row_sum = torch.logsumexp(row_inputs, dim=2).masked_fill(~valid, 0.0)
         log_u = (log_source.unsqueeze(1) - row_sum).masked_fill(~valid, -torch.inf)
@@ -87,14 +72,7 @@ def balanced_transport(log_kernel: Tensor, valid: Tensor, iterations: int,
 
 
 class QueryConditionedAttentionTransport(nn.Module):
-    """QAT and its Euclidean-OT, cross-attention-OT, and no-prior ablations.
 
-    All modalities and refinement iterations share the evidence projection,
-    query projection, and compatibility MLP. Modality keys and values have
-    separate projections. The MLP uses projected query, sample key, and
-    previous evidence features in that order: 3d -> d -> 1, with GELU.
-    Initial evidence parameters belong to the enclosing NuGAT model.
-    """
 
     VARIANTS = frozenset({"qat", "without_prior", "eot", "cot"})
 
@@ -145,12 +123,7 @@ class QueryConditionedAttentionTransport(nn.Module):
                     nn.init.zeros_(module.bias)
 
     def _compatibility_scores(self, query: Tensor, keys: Tensor, previous: Tensor) -> Tensor:
-        """Evaluate the concatenation MLP without materializing a 3d broadcast.
 
-        Splitting the first affine map by its three input blocks is exactly
-        equivalent to applying the MLP to cat(query, key, previous). Chunking
-        the batch limits temporary memory for large training batches.
-        """
         first = self.compatibility_mlp[0]
         last = self.compatibility_mlp[2]
         wq, wk, wy = first.weight.split(self.evidence_dim, dim=1)
@@ -197,7 +170,7 @@ class QueryConditionedAttentionTransport(nn.Module):
                 raise ValueError(f"{modality}: sample mask must be boolean [batch, samples] on the feature device")
             if not bool(valid.any(dim=1).all()):
                 raise ValueError(f"{modality}: every example requires at least one valid sample")
-            # Padded values are ignored even if a feature exporter uses NaN padding.
+
             x = x.masked_fill(~valid.unsqueeze(-1), 0.0)
             if not x.is_floating_point() or not y.is_floating_point() or not bool(torch.isfinite(x).all()) or not bool(torch.isfinite(y).all()):
                 raise ValueError(f"{modality}: valid samples and previous evidence must be finite floating-point values")
@@ -217,7 +190,7 @@ class QueryConditionedAttentionTransport(nn.Module):
             else:
                 log_prior = torch.zeros_like(attention).masked_fill(~valid.unsqueeze(-1), -torch.inf)
                 if self.variant == "eot":
-                    # Squared Euclidean cost uses the projected key and evidence.
+
                     cost = (keys.square().sum(-1, keepdim=True) + evidence_queries.square().sum(-1).unsqueeze(1) - 2 * torch.bmm(keys, evidence_queries.transpose(1, 2))).clamp_min(0)
                     log_kernel = -cost / self.temperature
                 else:

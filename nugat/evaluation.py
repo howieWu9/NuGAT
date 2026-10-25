@@ -1,9 +1,3 @@
-"""Evaluation of recorded predictions and independent experimental runs.
-
-No benchmark scores, guessed model outputs, or substitute entity features are
-embedded here. The exact answerer/judge checkpoints and prompts must be supplied
-by the experiment owner; the manuscript does not specify them sufficiently.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -53,11 +47,7 @@ def _finite_number(value: Any, field: str) -> float:
 
 
 def binary_metrics(labels: Sequence[int], scores: Sequence[float], threshold: float = 0.5) -> dict[str, float | None]:
-    """Binary MCV metrics, with macro averaging over labels 0 and 1.
 
-    AUC uses all positive-negative score comparisons, giving ties half credit.
-    Undefined class precision/recall/F1 is zero; single-class AUC is null.
-    """
     if len(labels) == 0 or len(labels) != len(scores):
         raise ValueError("Labels and scores must be nonempty and equally sized")
     if any(isinstance(y, bool) or not isinstance(y, (int, np.integer)) or y not in (0, 1) for y in labels):
@@ -88,8 +78,8 @@ def binary_metrics(labels: Sequence[int], scores: Sequence[float], threshold: fl
     positives, negatives = int(truth.sum()), int((truth == 0).sum())
     auc = None
     if positives and negatives:
-        # Mann-Whitney statistic with average ranks for tied values. This is
-        # O(n log n) and avoids allocating a positives-by-negatives matrix.
+
+
         order = np.argsort(values, kind="mergesort")
         ranks = np.empty(len(values), dtype=np.float64)
         start = 0
@@ -111,12 +101,7 @@ def evaluate_predictions(
     judge_protocol: str | None = None, score_max: float | None = None,
     threshold: float = 0.5, expected_ids: Iterable[str] | None = None,
 ) -> dict[str, Any]:
-    """Score actual prediction records and retain protocol metadata.
 
-    MQA records need ``id`` and numeric ``judge_score``. The reporting
-    convention is 100 * mean(judge_score) / score_max, explicitly selected by
-    the caller. MCV records need ``id``, binary ``label``, and ``score``.
-    """
     ids = _validated_ids(records)
     if expected_ids is not None and set(ids) != set(expected_ids):
         raise ValueError("Prediction ids do not exactly match the evaluation set")
@@ -148,7 +133,7 @@ def evaluate_predictions(
 
 
 def summarize_runs(runs: Sequence[Mapping[str, Any]], expected_runs: int = 5) -> dict[str, Any]:
-    """Mean and sample standard deviation (ddof=1) across independent runs."""
+
     if expected_runs < 2 or len(runs) != expected_runs:
         raise ValueError(f"Exactly {expected_runs} independent runs are required")
     signature_keys = ("dataset", "task", "answerer", "experiment_id", "protocol", "n_examples", "example_ids_sha256")
@@ -184,12 +169,7 @@ def summarize_runs(runs: Sequence[Mapping[str, Any]], expected_runs: int = 5) ->
 
 
 def load_adapter(spec: str, options: Mapping[str, Any] | None = None) -> Callable[..., Any]:
-    """Load an explicitly configured factory; never substitute a mock model.
 
-    ``module:factory`` is trusted local Python code. The factory receives the
-    JSON options and returns an answerer or judge callable. PyTorch modules
-    returned directly are frozen and switched to evaluation mode.
-    """
     if ":" not in spec:
         raise ValueError("Adapter must use module:factory syntax")
     module_name, factory_name = spec.rsplit(":", 1)
@@ -204,12 +184,7 @@ def load_adapter(spec: str, options: Mapping[str, Any] | None = None) -> Callabl
 
 
 def predictor_example(record: Mapping[str, Any]) -> dict[str, Any]:
-    """Pass only declared model inputs, never arbitrary annotation metadata.
 
-    Native audio objects expose only path and sampling_rate; candidate choices
-    are plain strings. Unknown metadata (including nested annotations) is not
-    forwarded to the frozen predictor.
-    """
     allowed = {"id", "query", "query_features", "modalities", "evidence_text"}
     result = {key: value for key, value in record.items() if key in allowed}
     for key in ("id", "query", "query_features"):
