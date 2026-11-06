@@ -35,6 +35,27 @@ def test_no_prior_is_exact_dot_product_cross_attention():
         torch.testing.assert_close(output.grounded[name], expected.transpose(1, 2) @ model.value_projections[name](x))
 
 
+def test_qat_satisfies_kl_objective_stationarity_on_each_column():
+    model, features, query, previous = example()
+    output = model(features, query, previous)
+    for name, plan in output.transport.items():
+        # At the constrained maximum, the objective derivative is constant
+        # across source rows in each column (the Lagrange multiplier).
+        derivative = output.attention[name] - model.temperature * (
+            plan.log() - output.log_prior[name] + 1
+        )
+        torch.testing.assert_close(derivative, derivative[:, :1, :].expand_as(derivative))
+
+
+@pytest.mark.parametrize("variant", ["without_prior", "eot", "cot"])
+def test_prior_free_variants_do_not_use_query_conditioning(variant):
+    model, features, query, previous = example(variant)
+    original = model(features, query, previous)
+    changed = model(features, query + 10, previous)
+    for name in features:
+        torch.testing.assert_close(original.transport[name], changed.transport[name])
+
+
 def test_compatibility_block_affine_matches_explicit_concat():
     model, features, query, previous = example()
     projected_query = model.query_projection(query)
@@ -60,6 +81,23 @@ def test_prior_depends_on_query_and_receives_gradients_from_both_modalities():
         assert model.query_projection.weight.grad.abs().sum() > 0
 
 
+def test_prior_depends_on_sample_keys_and_previous_evidence():
+    model, features, query, previous = example()
+    projected_query = model.query_projection(query)
+    keys = model.key_projections["text"](features["text"])
+    y = previous["text"]
+    original = torch.log_softmax(model._compatibility_scores(projected_query, keys, y), dim=1)
+    changed_keys = keys.clone()
+    changed_keys[:, 0] += 2
+    changed_y = y.clone()
+    changed_y[:, 0] += 2
+    key_prior = torch.log_softmax(model._compatibility_scores(projected_query, changed_keys, y), dim=1)
+    evidence_prior = torch.log_softmax(model._compatibility_scores(projected_query, keys, changed_y), dim=1)
+    assert not torch.allclose(original, key_prior)
+    assert not torch.allclose(original[:, :, 0], evidence_prior[:, :, 0])
+    torch.testing.assert_close(original[:, :, 1], evidence_prior[:, :, 1])
+
+
 @pytest.mark.parametrize("variant", ["qat", "without_prior", "eot", "cot"])
 def test_padded_samples_have_zero_mass_and_no_gradient(variant):
     model, features, query, previous = example(variant)
@@ -67,7 +105,14 @@ def test_padded_samples_have_zero_mass_and_no_gradient(variant):
     text = features["text"].detach().clone().requires_grad_(True)
     features["text"] = text
     output = model(features, query, previous, {"text": valid})
-    assert torch.count_nonzero(output.transport["text"].masked_select(~valid.unsqueeze(-1))) == 0
+    plan = output.transport["text"]
+    assert torch.isfinite(plan).all()
+    assert (plan >= 0).all()
+    torch.testing.assert_close(plan.sum(dim=1), torch.ones(2, 2))
+    assert torch.count_nonzero(plan.masked_select(~valid.unsqueeze(-1))) == 0
+    if variant in {"eot", "cot"}:
+        expected_rows = valid * (model.num_evidence_units / valid.sum(dim=1, keepdim=True))
+        torch.testing.assert_close(plan.sum(dim=2), expected_rows, atol=1e-3, rtol=0)
     output.grounded["text"].square().sum().backward()
     assert torch.count_nonzero(text.grad.masked_select(~valid.unsqueeze(-1))) == 0
     assert torch.isfinite(text.grad).all()
@@ -123,3 +168,25 @@ def test_balanced_ot_is_invariant_to_large_row_and_column_cost_offsets():
     expected = balanced_transport(kernel, valid, iterations=1000, tolerance=1e-10)
     actual = balanced_transport(shifted, valid, iterations=1000, tolerance=1e-10)
     torch.testing.assert_close(actual, expected)
+
+
+def test_eot_matches_cot_at_equivalent_temperature_with_fixed_marginals(monkeypatch):
+    def precise_transport(log_kernel, valid, iterations):
+        return balanced_transport(log_kernel, valid, iterations, tolerance=1e-10)
+
+    # Equivalent kernels can reach the default residual threshold at different steps.
+    monkeypatch.setattr("nugat.qat.balanced_transport", precise_transport)
+    eot, features, query, previous = example("eot")
+    cot, _, _, _ = example("cot")
+    eot = eot.double()
+    cot = cot.double()
+    features = {name: x.double() for name, x in features.items()}
+    query = query.double()
+    previous = {name: y.double() for name, y in previous.items()}
+    cot.load_state_dict(eot.state_dict())
+    cot.temperature = eot.temperature / (2 * math.sqrt(eot.evidence_dim))
+    masks = {"text": torch.tensor([[True, True, True, False], [True, False, True, True]])}
+    eot_output = eot(features, query, previous, masks)
+    cot_output = cot(features, query, previous, masks)
+    for name in features:
+        torch.testing.assert_close(eot_output.transport[name], cot_output.transport[name], atol=1e-9, rtol=1e-9)

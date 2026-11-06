@@ -56,18 +56,22 @@ def test_infeasible_candidates_raise_instead_of_claiming_convergence():
     assert failure.value.result.maximum_log_equality_residual == 2
 
 
-def test_ideal_utilities_are_attained_estimates_from_separate_fresh_runs():
-    starts = []
-    def factory():
-        value = torch.nn.Parameter(torch.zeros(2, dtype=torch.float64))
-        starts.append(value.detach().clone())
+def test_ideal_utilities_optimize_only_the_requested_modality_in_fresh_runs():
+    candidates = []
+    requested_modalities = []
+    def factory(modality):
+        values = [torch.nn.Parameter(torch.zeros(2, dtype=torch.float64), requires_grad=(i == modality))
+                  for i in range(2)]
+        candidates.append(values)
+        requested_modalities.append(modality)
         def evaluate(indices):
-            x = value[indices]
-            return torch.stack([F.logsigmoid(x), F.logsigmoid(-x)], dim=-1)
-        return [value], evaluate
+            return torch.stack([F.logsigmoid(value[indices]) for value in values], dim=-1)
+        return [values[modality]], evaluate
     ideals, report = estimate_log_ideals(factory, 2, 2, epochs=5, batch_size=2, learning_rate=0.1)
-    assert len(starts) == 2
-    assert all(torch.equal(s, torch.zeros_like(s)) for s in starts)
+    assert requested_modalities == [0, 1]
+    for modality, values in enumerate(candidates):
+        assert torch.all(values[modality] > 0)
+        torch.testing.assert_close(values[1 - modality], torch.zeros_like(values[1 - modality]))
     assert torch.all(ideals.exp() > 0.5)
     assert torch.all(ideals.exp() < 1)
     assert not ideals.requires_grad
@@ -81,6 +85,39 @@ def test_kss_requires_fixed_positive_ideal_utilities():
         bargaining_terms(logs, "kss")
     with pytest.raises(ValueError, match="remain fixed"):
         bargaining_terms(logs, "kss", torch.zeros_like(logs, requires_grad=True))
+
+
+@pytest.mark.parametrize("modality_index", [0, 1])
+def test_kss_script_step_keeps_other_modality_and_shared_parameters_fixed(modality_index):
+    from nugat.model import NuGAT
+    from scripts.train_bargaining import ideal_candidate_parameters
+
+    torch.manual_seed(11)
+    model = NuGAT({"audio": 4, "video": 4}, {"audio": 4, "video": 4}, query_dim=4,
+                  num_evidence_units=3, evidence_dim=4, iterations=2,
+                  gate_temperature=0.3).double().train()
+    features = {m: torch.randn(2, 4, 4, dtype=torch.float64) for m in model.modalities}
+    query = torch.randn(2, 4, dtype=torch.float64)
+    before = {name: parameter.detach().clone() for name, parameter in model.named_parameters()}
+    parameters = ideal_candidate_parameters(model, modality_index)
+    optimizer = torch.optim.Adam(parameters, lr=0.01)
+    output = model(features, query, generator=torch.Generator().manual_seed(7))
+    (-output.utilities[:, modality_index].mean()).backward()
+    optimizer.step()
+
+    target = model.modalities[modality_index]
+    target_names = {f"qat.key_projections.{target}.weight", f"qat.value_projections.{target}.weight",
+                    f"initial_mixing.{target}"}
+    for name, parameter in model.named_parameters():
+        if name in target_names:
+            assert not torch.equal(parameter, before[name]), name
+        elif name == "fusion.threshold_logits":
+            assert not torch.equal(parameter[:, modality_index], before[name][:, modality_index])
+            torch.testing.assert_close(parameter[:, 1 - modality_index], before[name][:, 1 - modality_index],
+                                       rtol=0, atol=0)
+        else:
+            assert not parameter.requires_grad, name
+            torch.testing.assert_close(parameter, before[name], rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("solution", ["nash", "egs", "kss", "uts"])
@@ -120,6 +157,7 @@ def test_comparison_cli_runs_on_explicit_numerical_fixtures(tmp_path, monkeypatc
     assert not report["reported_paper_results_reproduced"]
     checkpoint_name = "checkpoint.pt" if report["feasible"] else "candidate_infeasible.pt"
     _, checkpoint = load_checkpoint(output / "seed_7" / checkpoint_name)
+    assert checkpoint["format_version"] == 2
     assert checkpoint["bargaining_feasible"] == report["feasible"]
     assert checkpoint["noise_protocol"] == "fixed_per_minibatch_common_random_numbers"
     assert checkpoint["model_kwargs"]["objective"] == ("utilitarian" if solution == "uts" else "nash")

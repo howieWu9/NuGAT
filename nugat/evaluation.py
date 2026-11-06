@@ -95,6 +95,25 @@ def binary_metrics(labels: Sequence[int], scores: Sequence[float], threshold: fl
             "mcc": (tp * tn - fp * fn) / denominator if denominator else 0.0, "auc": auc}
 
 
+def multiple_choice_metrics(records: Sequence[Mapping[str, Any]]) -> dict[str, float]:
+    """MVU accuracy from explicit zero-based candidate indices, without answer parsing."""
+    if not records:
+        raise ValueError("At least one MVU prediction is required")
+    correct = 0
+    for record in records:
+        candidates = record.get("candidates")
+        if (not isinstance(candidates, list) or len(candidates) < 2 or
+                any(not isinstance(choice, str) or not choice.strip() for choice in candidates)):
+            raise ValueError("MVU candidates must contain at least two nonempty strings")
+        for field in ("label", "prediction"):
+            value = record.get(field)
+            if (isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)) or
+                    not 0 <= value < len(candidates)):
+                raise ValueError(f"MVU {field} must be a zero-based integer candidate index")
+        correct += int(record["label"] == record["prediction"])
+    return {"accuracy": correct / len(records)}
+
+
 def evaluate_predictions(
     records: Sequence[Mapping[str, Any]], *, task: str, dataset: str,
     seed: int, experiment_id: str, answerer: str | None = None,
@@ -124,8 +143,13 @@ def evaluate_predictions(
     elif task == "mcv":
         metrics = binary_metrics([r.get("label") for r in records], [r.get("score") for r in records], threshold)
         protocol = {"threshold": threshold, "averaging": "macro over labels [0, 1]", "undefined_class_metric": 0.0}
+    elif task == "mvu":
+        if not answerer:
+            raise ValueError("MVU requires an explicit answerer identifier")
+        metrics = multiple_choice_metrics(records)
+        protocol = {"matching": "exact zero-based candidate index", "accuracy_scale": "fraction"}
     else:
-        raise ValueError("task must be 'mqa' or 'mcv'")
+        raise ValueError("task must be 'mqa', 'mvu', or 'mcv'")
     id_digest = hashlib.sha256(json.dumps(sorted(ids), ensure_ascii=False).encode()).hexdigest()
     return {"dataset": dataset, "task": task, "answerer": answerer, "seed": seed,
             "experiment_id": experiment_id, "protocol": protocol, "n_examples": len(ids),

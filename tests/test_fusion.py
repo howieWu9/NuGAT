@@ -51,6 +51,29 @@ def test_utilitarian_is_negative_sum_of_utilities():
     )
 
 
+def test_seeded_gaussian_masks_svd_reconstruction_and_residual_mean():
+    grounded, previous, _ = make_inputs()
+    retention = torch.tensor([[0.35, 0.65], [0.7, 0.3]], dtype=torch.float64)
+    thresholds = torch.tensor([[0.25, 0.5, 0.75], [0.4, 0.55, 0.7]], dtype=torch.float64)
+    model = NashUtilityFusion(["audio", "video"], 3, 5, gate_temperature=0.2,
+                              residual_weight=0.3).double().train()
+    with torch.no_grad():
+        model.threshold_logits[0].copy_(torch.logit(thresholds))
+    output = model(grounded, previous, retention, 0, generator=torch.Generator().manual_seed(8))
+    generator = torch.Generator().manual_seed(8)
+    retained = []
+    for index, (modality, values) in enumerate(grounded.items()):
+        noise = torch.randn((2, 3), dtype=torch.float64, generator=generator)
+        expected_gate = (retention[:, index, None] - thresholds[index] + 0.2 * noise >= 0).double()
+        torch.testing.assert_close(output.gates[modality], expected_gate)
+        left, singular, right_t = torch.linalg.svd(values, full_matrices=False)
+        expected_retained = (left * (singular * expected_gate).unsqueeze(-2)) @ right_t
+        torch.testing.assert_close(output.retained[modality], expected_retained)
+        retained.append(expected_retained)
+    expected_fused = 0.7 * torch.stack(retained).mean(dim=0) + 0.3 * previous
+    torch.testing.assert_close(output.fused, expected_fused)
+
+
 @pytest.mark.parametrize("residual_weight", [0.0, 1.0])
 def test_residual_endpoints(residual_weight):
     grounded, previous, retention = make_inputs()

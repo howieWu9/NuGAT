@@ -198,7 +198,7 @@ def solve_bargaining(
 
 
 def estimate_log_ideals(
-    candidate_factory: Callable[[], tuple[Iterable[nn.Parameter], UtilityCallback]],
+    candidate_factory: Callable[[int], tuple[Iterable[nn.Parameter], UtilityCallback]],
     examples: int,
     modalities: int,
     *,
@@ -206,6 +206,14 @@ def estimate_log_ideals(
     batch_size: int = 1024,
     learning_rate: float = 1e-4,
 ) -> tuple[Tensor, dict]:
+    """Estimate each ideal by optimizing only its modality (Section 5.3.3).
+
+    The factory receives the target modality index and must return a fresh candidate
+    with the other modalities and shared parameters fixed. Its parameter iterable
+    must contain only the target modality's trainable parameters. The callback still
+    evaluates all modalities together so the utility has the same denominator as
+    the eventual constrained problem.
+    """
 
     if min(examples, modalities, epochs, batch_size) < 1:
         raise ValueError("Sizes and the ideal-point epoch budget must be positive.")
@@ -214,7 +222,7 @@ def estimate_log_ideals(
     columns = []
     records = []
     for modality in range(modalities):
-        parameters, evaluate = candidate_factory()
+        parameters, evaluate = candidate_factory(modality)
         parameters = [p for p in parameters if p.requires_grad]
         if not parameters:
             raise ValueError("Candidate factory returns no trainable parameters.")

@@ -75,6 +75,8 @@ def _masked_svd(values: Tensor, gates: Tensor) -> Tensor:
             left_valid * (singular_valid * gates[valid]).unsqueeze(-2)
         ) @ right_valid
     basis_t = right_t[degenerate].detach()
+    # Singular-vector derivatives are undefined at repeated/zero singular values.
+    # Keep the Eq. (12) forward value and use a fixed-basis gradient there.
     coordinates = values[degenerate] @ basis_t.transpose(-2, -1)
     result[degenerate] = (coordinates * gates[degenerate].unsqueeze(-2)) @ basis_t
     return result
@@ -162,6 +164,8 @@ class NashUtilityFusion(nn.Module):
             )
             latent = mean + self.gate_temperature * noise
         else:
+            # Deterministic inference is an implementation choice, not Eq. (11)'s
+            # Gaussian sampling; stochastic_eval=True retains that sampling rule.
             latent = mean
         hard = (latent >= 0).to(mean.dtype)
         if not self.training:
@@ -169,6 +173,8 @@ class NashUtilityFusion(nn.Module):
         probability = 0.5 * (
             1 + torch.erf(mean / (self.gate_temperature * math.sqrt(2.0)))
         )
+        # Eq. (11) specifies hard forward masks but no gradient estimator. Use
+        # the Gaussian retention probability for straight-through gradients.
         return hard + (probability - probability.detach())
 
     def forward(

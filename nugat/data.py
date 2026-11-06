@@ -120,12 +120,14 @@ class ManifestDataset(Dataset):
             raise ValueError(f"No {split!r} records in {self.manifest}")
         base = self.manifest.parent
         self._paths: list[tuple[Path, dict[str, Path]]] = []
+        self.modality_sizes: dict[str, int] = {}
         for record in self.records:
             query_path = _feature_path(base, record["query_features"])
             modality_paths = {m: _feature_path(base, p) for m, p in record["modalities"].items()}
             query_shape = _read_array(query_path, 1, metadata_only=True).shape
-            dims = {m: _read_array(p, 2, metadata_only=True).shape[1]
-                    for m, p in modality_paths.items()}
+            shapes = {m: _read_array(p, 2, metadata_only=True).shape
+                      for m, p in modality_paths.items()}
+            dims = {m: shape[1] for m, shape in shapes.items()}
             current = FeatureSchema(query_shape[0], dims)
             if schema is None:
                 schema = current
@@ -134,9 +136,26 @@ class ManifestDataset(Dataset):
                     f"Feature schema mismatch for {record['id']}: {current}; expected {schema}. "
                     "Every record must have the same modalities and encoder dimensions."
                 )
+            for name, shape in shapes.items():
+                self.modality_sizes[name] = max(self.modality_sizes.get(name, 0), shape[0])
             self._paths.append((query_path, modality_paths))
         assert schema is not None
         self.schema = schema
+
+    def validate_modality_sizes(self, modality_sizes: Mapping[str, int]) -> None:
+        """Check fixed mixing capacities without changing variable-length samples."""
+        if not isinstance(modality_sizes, Mapping) or set(modality_sizes) != set(self.modality_sizes):
+            raise ValueError("modality_sizes must contain exactly the dataset modalities")
+        for name, observed in self.modality_sizes.items():
+            capacity = modality_sizes[name]
+            if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 1:
+                raise ValueError(f"modality_sizes[{name!r}] must be a positive integer")
+            if observed > capacity:
+                raise ValueError(
+                    f"The {self.split} split requires {observed} source slots for {name!r}, "
+                    f"exceeding modality_sizes capacity {capacity}. Configure source capacities "
+                    "before training; checkpoint capacities cannot grow during evaluation."
+                )
 
     def __len__(self) -> int:
         return len(self.records)

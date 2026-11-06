@@ -18,11 +18,35 @@ from nugat.bargaining import (
 )
 from nugat.data import ManifestDataset, collate_evidence
 from nugat.fusion import utility_objective
+from nugat.model import NuGAT
 from nugat.training import TrainingSettings, build_model, resolve_device, seed_everything
 
 
 def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def ideal_candidate_parameters(model: NuGAT, modality_index: int) -> list[torch.nn.Parameter]:
+    """Prepare a fresh KSS candidate while holding other/shared parameters fixed."""
+    if not 0 <= modality_index < len(model.modalities):
+        raise ValueError("Ideal-search modality index is out of range")
+    modality = model.modalities[modality_index]
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
+    parameters = [
+        *model.qat.key_projections[modality].parameters(),
+        *model.qat.value_projections[modality].parameters(),
+        model.initial_mixing[modality],
+        model.fusion.threshold_logits,
+    ]
+    for parameter in parameters:
+        parameter.requires_grad_(True)
+    # The direction thresholds share one tensor across modalities. With the fresh
+    # Adam optimizer used for each ideal search, this mask fixes all other slices.
+    threshold_mask = torch.zeros_like(model.fusion.threshold_logits)
+    threshold_mask[:, modality_index, :] = 1
+    model.fusion.threshold_logits.register_hook(lambda gradient: gradient * threshold_mask)
+    return parameters
 
 
 def main() -> None:
@@ -88,11 +112,11 @@ def main() -> None:
                 return model(batch.features, batch.query, masks=batch.masks, generator=generator).log_utilities
             return evaluate
 
-        def candidate_factory():
+        def candidate_factory(modality_index: int):
             model, _ = build_model(effective_config, dataset, allow_alternative_objective=True)
             model.load_state_dict(initial_state)
             model.to(device).train()
-            return model.parameters(), evaluator(model)
+            return ideal_candidate_parameters(model, modality_index), evaluator(model)
 
         log_ideals = None
         ideal_report = None
@@ -102,6 +126,7 @@ def main() -> None:
                 epochs=args.ideal_epochs or training.epochs,
                 batch_size=training.batch_size, learning_rate=training.learning_rate,
             )
+            ideal_report["parameter_scope"] = "target_modality_only; shared_parameters_fixed"
             torch.save({"ids": [r["id"] for r in dataset.records],
                         "modalities": list(dataset.schema.modality_dims),
                         "log_ideals": log_ideals,
@@ -158,7 +183,7 @@ def main() -> None:
         feasible = bool(report["feasible"])
         any_infeasible |= not feasible
         checkpoint_name = "checkpoint.pt" if feasible else "candidate_infeasible.pt"
-        torch.save({"format_version": 1, "model_state": model.state_dict(),
+        torch.save({"format_version": 2, "model_state": model.state_dict(),
                     "model_kwargs": kwargs, "config": effective_config,
                     "seed": seed, "epoch": training.epochs,
                     "manifest_sha256": manifest_sha, "torch_version": str(torch.__version__),

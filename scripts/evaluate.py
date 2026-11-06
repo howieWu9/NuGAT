@@ -8,7 +8,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nugat.evaluation import evaluate_predictions, load_adapter, predictor_example, read_jsonl
+from nugat.evaluation import (evaluate_predictions, load_adapter, multiple_choice_metrics,
+                              predictor_example, read_jsonl)
 
 
 def _json(path: str | None) -> dict:
@@ -57,6 +58,7 @@ def _infer(args: argparse.Namespace) -> None:
     kwargs = checkpoint["model_kwargs"]
     schema = FeatureSchema(query_dim=kwargs["query_dim"], modality_dims=kwargs["modality_dims"])
     dataset = ManifestDataset(args.manifest, args.split, schema=schema)
+    dataset.validate_modality_sizes(kwargs["modality_sizes"])
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_evidence)
     predictor_options, judge_options = _json(args.predictor_options), _json(args.judge_options)
     predictor = load_adapter(args.predictor, predictor_options) if args.predictor else None
@@ -116,6 +118,12 @@ def _infer(args: argparse.Namespace) -> None:
                             if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value):
                                 raise TypeError("Judge must return a finite numerical score")
                             record["judge_score"] = float(value)
+                    elif args.task == "mvu":
+                        record.update(prediction=prediction, label=example.get("label"),
+                                      candidates=example.get("candidates"))
+                        multiple_choice_metrics([record])
+                        record["prediction"] = int(prediction)
+                        record["label"] = int(record["label"])
                     else:
                         if isinstance(prediction, bool) or not isinstance(prediction, (int, float)) or not 0 <= prediction <= 1:
                             raise TypeError("MCV predictor must return a probability in [0, 1]")
@@ -138,7 +146,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     score = sub.add_parser("score")
     score.add_argument("--predictions", required=True)
-    score.add_argument("--task", choices=("mqa", "mcv"), required=True)
+    score.add_argument("--task", choices=("mqa", "mvu", "mcv"), required=True)
     score.add_argument("--dataset", required=True)
     score.add_argument("--seed", type=int, required=True)
     score.add_argument("--experiment-id", required=True)
@@ -153,7 +161,7 @@ def main() -> None:
     infer.add_argument("--manifest", required=True)
     infer.add_argument("--checkpoint", required=True)
     infer.add_argument("--split", choices=("validation", "test"), default="test")
-    infer.add_argument("--task", choices=("mqa", "mcv"), default="mqa")
+    infer.add_argument("--task", choices=("mqa", "mvu", "mcv"), default="mqa")
     infer.add_argument("--batch-size", type=int, default=16)
     infer.add_argument("--device", default="auto")
     infer.add_argument("--predictor")

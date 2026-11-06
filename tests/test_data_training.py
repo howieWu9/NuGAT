@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from nugat.data import ManifestDataset, collate_evidence
-from nugat.training import (TrainingSettings, fit, grid_search, load_checkpoint,
+from nugat.training import (TrainingSettings, build_model, fit, grid_search, load_checkpoint,
                             make_loader, seed_everything, train_runs, validation_nash_loss)
 
 
@@ -32,6 +32,7 @@ def test_source_padding_and_feature_schema(tmp_path):
     batch = collate_evidence([dataset[0], dataset[1]])
     assert dataset.schema.query_dim == 5
     assert dataset.schema.modality_dims == {"text": 4, "audio": 3}
+    assert dataset.modality_sizes == {"text": 2, "audio": 2}
     assert batch.features["text"].shape == (2, 2, 4)
     assert torch.equal(batch.masks["text"], torch.tensor([[True, False], [True, True]]))
     assert torch.count_nonzero(batch.features["text"][0, 1]) == 0
@@ -48,6 +49,39 @@ def test_feature_dimensions_checked_before_training(tmp_path):
     np.save(tmp_path / "text1.npy", np.zeros((2, 9), dtype=np.float32))
     with pytest.raises(ValueError, match="schema mismatch"):
         ManifestDataset(manifest, "train")
+
+
+def test_source_capacities_are_resolved_before_optimizer_creation(tmp_path):
+    dataset = ManifestDataset(write_fixture(tmp_path), "train")
+    model, kwargs = build_model({"model": {"num_evidence_units": 2, "evidence_dim": 4}}, dataset)
+    assert kwargs["modality_sizes"] == {"text": 2, "audio": 2}
+    assert model.initial_mixing["text"].shape == (2, 2)
+    optimizer = torch.optim.Adam(model.parameters())
+    parameters = {id(parameter) for group in optimizer.param_groups for parameter in group["params"]}
+    assert all(id(parameter) in parameters for parameter in model.initial_mixing.values())
+    model, kwargs = build_model({"model": {"modality_sizes": {"text": 5, "audio": 3},
+                                           "num_evidence_units": 2, "evidence_dim": 4}}, dataset)
+    assert kwargs["modality_sizes"] == {"text": 5, "audio": 3}
+    assert model.initial_mixing["text"].shape == (2, 5)
+
+
+@pytest.mark.parametrize("sizes", [{"text": 1, "audio": 2}, {"text": 2},
+                                   {"text": True, "audio": 2}, {"text": 2.0, "audio": 2}])
+def test_invalid_source_capacities_rejected_before_model_creation(tmp_path, sizes):
+    dataset = ManifestDataset(write_fixture(tmp_path), "train")
+    with pytest.raises(ValueError, match="modality_sizes"):
+        build_model({"model": {"modality_sizes": sizes}}, dataset)
+
+
+def test_validation_cannot_silently_grow_training_capacities(tmp_path):
+    manifest = write_fixture(tmp_path)
+    output = tmp_path / "runs"
+    with pytest.raises(ValueError, match="validation split requires 3 source slots"):
+        train_runs({"training": {"epochs": 1, "seeds": [7]}}, manifest, output, validation=True)
+    assert not output.exists()
+    test = ManifestDataset(manifest, "test")
+    with pytest.raises(ValueError, match="test split requires 4 source slots"):
+        test.validate_modality_sizes({"text": 3, "audio": 2})
 
 
 def test_nonfinite_and_object_features_rejected(tmp_path):
@@ -106,10 +140,11 @@ def test_real_model_training_checkpoint_round_trip(tmp_path):
 
     rng = np.random.default_rng(9)
     for i in range(4):
-        np.save(tmp_path / f"text{i}.npy", rng.normal(size=(4, 4)).astype("float32"))
+        np.save(tmp_path / f"text{i}.npy", rng.normal(size=(i + 3, 4)).astype("float32"))
         np.save(tmp_path / f"audio{i}.npy", rng.normal(size=(4, 3)).astype("float32"))
     config = {"dataset": "synthetic_mechanics_test_only",
-              "model": {"num_evidence_units": 2, "evidence_dim": 4, "iterations": 3},
+              "model": {"num_evidence_units": 2, "evidence_dim": 4, "iterations": 3,
+                        "modality_sizes": {"text": 6, "audio": 5}},
               "training": {"epochs": 1, "batch_size": 2, "learning_rate": 1e-3,
                            "seeds": [7, 8], "device": "cpu"}}
     summary = train_runs(config, manifest, tmp_path / "runs", validation=True)
@@ -117,6 +152,9 @@ def test_real_model_training_checkpoint_round_trip(tmp_path):
     assert all(run["epochs"] == 1 for run in summary["runs"])
     checkpoint_path = tmp_path / "runs" / "seed_7" / "checkpoint.pt"
     model, checkpoint = load_checkpoint(checkpoint_path)
+    assert checkpoint["format_version"] == 2
+    assert checkpoint["model_kwargs"]["modality_sizes"] == {"text": 6, "audio": 5}
+    assert model.initial_mixing["text"].shape == (2, 6)
     seed_everything(7)
     initial = NuGAT(**checkpoint["model_kwargs"])
     initial_parameters = dict(initial.named_parameters())
@@ -124,6 +162,7 @@ def test_real_model_training_checkpoint_round_trip(tmp_path):
                for name, parameter in model.named_parameters()}
     assert any(changes.values())
     assert any(changed and "compatibility" in name for name, changed in changes.items())
+    assert any(changed and "initial_mixing" in name for name, changed in changes.items())
     dataset = ManifestDataset(manifest, "validation")
     batch = collate_evidence([dataset[0]])
     again, _ = load_checkpoint(checkpoint_path)
@@ -131,3 +170,17 @@ def test_real_model_training_checkpoint_round_trip(tmp_path):
         first = model(batch.features, batch.query, masks=batch.masks).fused
         second = again(batch.features, batch.query, masks=batch.masks).fused
     assert torch.equal(first, second)
+
+
+def test_legacy_checkpoint_requires_retraining(tmp_path):
+    checkpoint = tmp_path / "old.pt"
+    torch.save({"format_version": 1}, checkpoint)
+    with pytest.raises(ValueError, match="cannot be converted faithfully"):
+        load_checkpoint(checkpoint)
+
+
+def test_checkpoint_cannot_omit_source_capacities(tmp_path):
+    checkpoint = tmp_path / "invalid.pt"
+    torch.save({"format_version": 2, "model_kwargs": {}}, checkpoint)
+    with pytest.raises(ValueError, match="requires model_kwargs.modality_sizes"):
+        load_checkpoint(checkpoint)

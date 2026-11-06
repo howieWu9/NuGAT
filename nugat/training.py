@@ -151,6 +151,9 @@ def _model_kwargs(config: Mapping[str, Any], dataset: ManifestDataset, *,
         if key in kwargs and kwargs[key] != inferred:
             raise ValueError(f"Configured {key} differs from the feature files")
         kwargs[key] = inferred
+    modality_sizes = kwargs.get("modality_sizes", dataset.modality_sizes)
+    dataset.validate_modality_sizes(modality_sizes)
+    kwargs["modality_sizes"] = dict(modality_sizes)
     if not allow_alternative_objective and kwargs.get("objective", "nash") != "nash":
         raise ValueError("The standard training runner uses objective='nash'; use explicit ablation code for other objectives")
     return kwargs
@@ -183,6 +186,8 @@ def train_runs(config: Mapping[str, Any], manifest: str | Path, output: str | Pa
     if metric_callback is not None and not validation:
         raise ValueError("A selection metric requires validation=True")
     kwargs = _model_kwargs(config, dataset)
+    if val_dataset is not None:
+        val_dataset.validate_modality_sizes(kwargs["modality_sizes"])
     device = resolve_device(settings.device)
     output = Path(output)
     _new_run_directory(output)
@@ -213,7 +218,7 @@ def train_runs(config: Mapping[str, Any], manifest: str | Path, output: str | Pa
                     raise ValueError("Validation callback must return a finite scalar")
                 result["validation_metric"] = value
         checkpoint = {
-            "format_version": 1, "model_state": model.state_dict(),
+            "format_version": 2, "model_state": model.state_dict(),
             "optimizer_state": optimizer.state_dict(), "model_kwargs": kwargs,
             "config": resolved_config, "seed": seed, "epoch": settings.epochs,
             "manifest_sha256": manifest_sha, "torch_version": str(torch.__version__),
@@ -240,8 +245,15 @@ def load_checkpoint(path: str | Path, *, device: str | torch.device = "cpu"):
     from .model import NuGAT
 
     checkpoint = torch.load(path, map_location=device, weights_only=True)
-    if not isinstance(checkpoint, dict) or checkpoint.get("format_version") != 1:
+    if isinstance(checkpoint, dict) and checkpoint.get("format_version") == 1:
+        raise ValueError(
+            "Legacy format_version=1 checkpoints use free initial evidence and cannot be "
+            "converted faithfully to source-conditioned initial mixing; retrain with format_version=2."
+        )
+    if not isinstance(checkpoint, dict) or checkpoint.get("format_version") != 2:
         raise ValueError("Unsupported checkpoint format")
+    if not isinstance(checkpoint.get("model_kwargs"), dict) or "modality_sizes" not in checkpoint["model_kwargs"]:
+        raise ValueError("Checkpoint format_version=2 requires model_kwargs.modality_sizes")
     model = NuGAT(**checkpoint["model_kwargs"])
     model.load_state_dict(checkpoint["model_state"], strict=True)
     model.to(device).eval()
