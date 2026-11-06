@@ -143,7 +143,6 @@ class ManifestDataset(Dataset):
         self.schema = schema
 
     def validate_modality_sizes(self, modality_sizes: Mapping[str, int]) -> None:
-        """Check fixed mixing capacities without changing variable-length samples."""
         if not isinstance(modality_sizes, Mapping) or set(modality_sizes) != set(self.modality_sizes):
             raise ValueError("modality_sizes must contain exactly the dataset modalities")
         for name, observed in self.modality_sizes.items():

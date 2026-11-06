@@ -96,7 +96,6 @@ def binary_metrics(labels: Sequence[int], scores: Sequence[float], threshold: fl
 
 
 def multiple_choice_metrics(records: Sequence[Mapping[str, Any]]) -> dict[str, float]:
-    """MVU accuracy from explicit zero-based candidate indices, without answer parsing."""
     if not records:
         raise ValueError("At least one MVU prediction is required")
     correct = 0

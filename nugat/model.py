@@ -115,7 +115,6 @@ class NuGAT(nn.Module):
             if not bool(torch.isfinite(x).all()):
                 raise ValueError(f"{modality}: valid samples must be finite")
             values = self.qat.value_projections[modality](x)
-            # Initial evidence is W_hat_m X_m^V, as defined before Eq. (4).
             states[modality] = self.initial_mixing[modality][:, :x.shape[1]] @ values
         return states
 

@@ -27,7 +27,6 @@ def write_json(path: Path, value: object) -> None:
 
 
 def ideal_candidate_parameters(model: NuGAT, modality_index: int) -> list[torch.nn.Parameter]:
-    """Prepare a fresh KSS candidate while holding other/shared parameters fixed."""
     if not 0 <= modality_index < len(model.modalities):
         raise ValueError("Ideal-search modality index is out of range")
     modality = model.modalities[modality_index]
@@ -41,8 +40,6 @@ def ideal_candidate_parameters(model: NuGAT, modality_index: int) -> list[torch.
     ]
     for parameter in parameters:
         parameter.requires_grad_(True)
-    # The direction thresholds share one tensor across modalities. With the fresh
-    # Adam optimizer used for each ideal search, this mask fixes all other slices.
     threshold_mask = torch.zeros_like(model.fusion.threshold_logits)
     threshold_mask[:, modality_index, :] = 1
     model.fusion.threshold_logits.register_hook(lambda gradient: gradient * threshold_mask)

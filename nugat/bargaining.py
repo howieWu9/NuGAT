@@ -206,14 +206,6 @@ def estimate_log_ideals(
     batch_size: int = 1024,
     learning_rate: float = 1e-4,
 ) -> tuple[Tensor, dict]:
-    """Estimate each ideal by optimizing only its modality (Section 5.3.3).
-
-    The factory receives the target modality index and must return a fresh candidate
-    with the other modalities and shared parameters fixed. Its parameter iterable
-    must contain only the target modality's trainable parameters. The callback still
-    evaluates all modalities together so the utility has the same denominator as
-    the eventual constrained problem.
-    """
 
     if min(examples, modalities, epochs, batch_size) < 1:
         raise ValueError("Sizes and the ideal-point epoch budget must be positive.")

@@ -11,12 +11,6 @@ from torch.nn import functional as F
 
 @dataclass
 class QATOutput:
-    """Grounded evidence and source-by-evidence plans (including batch axes).
-
-    Every transport plan satisfies ``P >= 0`` and ``P.sum(dim=1) == 1``;
-    padded source samples receive zero mass. EOT/COT additionally fix each
-    valid source row sum to ``num_evidence_units / num_valid_samples``.
-    """
 
     grounded: dict[str, Tensor]
     transport: dict[str, Tensor]
@@ -26,12 +20,6 @@ class QATOutput:
 
 def balanced_transport(log_kernel: Tensor, valid: Tensor, iterations: int,
                        tolerance: float = 1e-3) -> Tensor:
-    """Solve uniform, two-sided entropic OT and scale each target mass to one.
-
-    Exponentiating the log-domain solution enforces ``P >= 0``. Scaling the
-    probability plan by the number of targets gives the same column mass as
-    QAT while preserving both fixed marginals (within ``tolerance``).
-    """
 
     if iterations < 1:
         raise ValueError("Sinkhorn iterations must be positive")
@@ -85,14 +73,6 @@ def balanced_transport(log_kernel: Tensor, valid: Tensor, iterations: int,
 
 
 class QueryConditionedAttentionTransport(nn.Module):
-    """Ground samples with the manuscript's four transport formulations.
-
-    QAT maximizes ``<P, S> - temperature * KL(P || exp(B))`` subject to
-    ``P >= 0`` and unit column sums (Eqs. 2, 6, 8). ``without_prior`` uses
-    the same one-sided constraints with entropy regularization. EOT/COT
-    impose both uniform marginals, using squared Euclidean cost and
-    negative scaled-dot-product attention cost, respectively.
-    """
 
     VARIANTS = frozenset({"qat", "without_prior", "eot", "cot"})
 
@@ -203,7 +183,6 @@ class QueryConditionedAttentionTransport(nn.Module):
                 compatibility = compatibility.masked_fill(~valid.unsqueeze(-1), -torch.inf)
                 log_prior = F.log_softmax(compatibility, dim=1)
                 logits = attention / self.temperature + log_prior
-                # Eq. (8) enforces nonnegativity and column sums jointly.
                 transport = F.softmax(logits, dim=1)
             elif self.variant == "without_prior":
                 log_prior = torch.zeros_like(attention).masked_fill(~valid.unsqueeze(-1), -torch.inf)
@@ -211,9 +190,6 @@ class QueryConditionedAttentionTransport(nn.Module):
             else:
                 log_prior = torch.zeros_like(attention).masked_fill(~valid.unsqueeze(-1), -torch.inf)
                 if self.variant == "eot":
-                    # With fixed marginals, norm terms are constant in P:
-                    # EOT(tau) equals COT(tau / (2 * sqrt(evidence_dim)))
-                    # for identical projections, up to numerical tolerance.
                     cost = (keys.square().sum(-1, keepdim=True) + evidence_queries.square().sum(-1).unsqueeze(1) - 2 * torch.bmm(keys, evidence_queries.transpose(1, 2))).clamp_min(0)
                     log_kernel = -cost / self.temperature
                 else:

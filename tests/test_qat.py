@@ -39,8 +39,6 @@ def test_qat_satisfies_kl_objective_stationarity_on_each_column():
     model, features, query, previous = example()
     output = model(features, query, previous)
     for name, plan in output.transport.items():
-        # At the constrained maximum, the objective derivative is constant
-        # across source rows in each column (the Lagrange multiplier).
         derivative = output.attention[name] - model.temperature * (
             plan.log() - output.log_prior[name] + 1
         )
@@ -174,7 +172,6 @@ def test_eot_matches_cot_at_equivalent_temperature_with_fixed_marginals(monkeypa
     def precise_transport(log_kernel, valid, iterations):
         return balanced_transport(log_kernel, valid, iterations, tolerance=1e-10)
 
-    # Equivalent kernels can reach the default residual threshold at different steps.
     monkeypatch.setattr("nugat.qat.balanced_transport", precise_transport)
     eot, features, query, previous = example("eot")
     cot, _, _, _ = example("cot")
